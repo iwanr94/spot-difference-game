@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Harbor at Dusk — a spot-the-difference hunt</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #070d18;
+    color: #dfe8f2;
+    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    overflow: hidden;
+  }
+  #wrap {
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #stage {
+    width: min(100vw, 1280px);
+    height: auto;
+    max-height: 100vh;
+    border-radius: 14px;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6);
+    touch-action: manipulation;
+    display: block;
+  }
+</style>
+</head>
+<body>
+  <div id="wrap">
+    <canvas id="stage" width="1280" height="780" aria-label="Harbor at Dusk, a spot the difference game"></canvas>
+  </div>
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
