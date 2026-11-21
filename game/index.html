@@ -1,40 +1,149 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Harbor at Dusk — a spot-the-difference hunt</title>
+<title>Harbor at Dusk — Spot the Difference</title>
 <style>
-  html, body {
+  * { box-sizing: border-box; }
+  body {
     margin: 0;
-    padding: 0;
-    background: #070d18;
-    color: #dfe8f2;
-    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    background: #141a2e;
+    color: #f5efe0;
+    font-family: Georgia, 'Times New Roman', serif;
+    text-align: center;
+  }
+  header { padding: 12px 8px 4px; }
+  h1 { margin: 0; font-size: 30px; letter-spacing: 1px; }
+  .subtitle { margin: 4px 0 0; color: #b8c4d8; font-size: 15px; }
+  #hud {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    align-items: center;
+    flex-wrap: wrap;
+    padding: 10px;
+  }
+  .pill {
+    background: #232c4a;
+    border: 1px solid #3a4a72;
+    border-radius: 999px;
+    padding: 6px 14px;
+    font-size: 16px;
+  }
+  #timer.urgent { color: #ff6b5e; font-weight: bold; }
+  #timer-bar-wrap {
+    width: 180px;
+    height: 10px;
+    background: #232c4a;
+    border: 1px solid #3a4a72;
+    border-radius: 999px;
     overflow: hidden;
   }
-  #wrap {
-    width: 100vw;
-    height: 100vh;
+  #timer-bar { height: 100%; width: 100%; background: #f08a4b; }
+  button {
+    font-family: inherit;
+    font-size: 15px;
+    cursor: pointer;
+    border-radius: 999px;
+    border: 1px solid #3a4a72;
+    background: #2b3a63;
+    color: #f5efe0;
+    padding: 7px 16px;
+  }
+  button:hover { background: #3a4a72; }
+  button:disabled { opacity: 0.45; cursor: default; }
+  .set-btn.active { background: #f08a4b; border-color: #f08a4b; color: #141a2e; }
+  #panels {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    padding: 4px 12px 12px;
+  }
+  .panel { position: relative; }
+  .panel .tag {
+    position: absolute;
+    top: 6px;
+    left: 8px;
+    background: rgba(20, 26, 46, 0.7);
+    border-radius: 6px;
+    padding: 2px 8px;
+    font-size: 13px;
+  }
+  canvas {
+    display: block;
+    width: 640px;
+    max-width: 48vw;
+    height: auto;
+    border: 3px solid #3a4a72;
+    border-radius: 8px;
+    cursor: crosshair;
+    background: #1d3a52;
+  }
+  #message { min-height: 22px; color: #ffd166; font-size: 16px; margin: 2px 0 10px; }
+  #overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(10, 14, 28, 0.82);
     display: flex;
     align-items: center;
     justify-content: center;
+    z-index: 10;
   }
-  #stage {
-    width: min(100vw, 1280px);
-    height: auto;
-    max-height: 100vh;
+  #overlay.hidden { display: none; }
+  #overlay .card {
+    background: #232c4a;
+    border: 1px solid #3a4a72;
     border-radius: 14px;
-    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6);
-    touch-action: manipulation;
-    display: block;
+    padding: 28px 34px;
+    max-width: 520px;
   }
+  #overlay-title { margin: 0 0 10px; font-size: 32px; }
+  #overlay-text { color: #b8c4d8; font-size: 17px; line-height: 1.5; }
+  #overlay-btn { margin-top: 16px; font-size: 18px; padding: 10px 26px; }
+  footer { color: #7c8aa8; font-size: 13px; padding-bottom: 12px; }
 </style>
 </head>
 <body>
-  <div id="wrap">
-    <canvas id="stage" width="1280" height="780" aria-label="Harbor at Dusk, a spot the difference game"></canvas>
+<header>
+  <h1>Harbor at Dusk</h1>
+  <p class="subtitle">Spot the difference — a lighthouse cove, two pictures, one truth.</p>
+</header>
+
+<div id="hud">
+  <span class="pill" id="found-count">Found 0 / 10</span>
+  <span class="pill" id="remaining-count">Remaining 10</span>
+  <span class="pill">⏱ <span id="timer">3:00</span></span>
+  <span id="timer-bar-wrap"><span id="timer-bar"></span></span>
+  <button id="hint-btn" type="button">Hint (H)</button>
+  <span class="pill" id="hints-left">Hints left: 3</span>
+  <button class="set-btn active" data-set="dusk" type="button">Dusk · 1</button>
+  <button class="set-btn" data-set="night" type="button">Night · 2</button>
+  <button class="set-btn" data-set="storm" type="button">Storm · 3</button>
+</div>
+
+<div id="panels">
+  <div class="panel">
+    <span class="tag">Left — the cove</span>
+    <canvas id="left-canvas" width="640" height="480"></canvas>
   </div>
-  <script type="module" src="./src/main.js"></script>
+  <div class="panel">
+    <span class="tag">Right — almost the same</span>
+    <canvas id="right-canvas" width="640" height="480"></canvas>
+  </div>
+</div>
+
+<p id="message"></p>
+
+<div id="overlay">
+  <div class="card">
+    <h2 id="overlay-title">Harbor at Dusk</h2>
+    <p id="overlay-text"></p>
+    <button id="overlay-btn" type="button">Start hunting</button>
+  </div>
+</div>
+
+<footer>Click a difference on either picture · H for a hint · R to restart · 1/2/3 switch sets</footer>
+<script type="module" src="./src/main.js"></script>
 </body>
 </html>

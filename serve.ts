@@ -1,18 +1,14 @@
-// serve.ts — a tiny static server for game/ so the cove can be played in a browser.
-// Node 22, standard library only: node serve.ts [--port 8080] [--root game]
+// Harbor at Dusk — serve: a tiny static server for local play-testing.
+// Serves game/ at http://localhost:8080. Node 22, standard library only.
 
+import { createReadStream, existsSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
-import { createReadStream, statSync } from 'node:fs';
-import { extname, join, normalize, resolve } from 'node:path';
+import { extname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const args = process.argv.slice(2);
-function argOf(name, fallback) {
-  const i = args.indexOf(name);
-  return i >= 0 && args[i + 1] ? args[i + 1] : fallback;
-}
-
-const root = resolve(argOf('--root', 'game'));
-const port = Number(argOf('--port', '8080'));
+const here = fileURLToPath(new URL('.', import.meta.url));
+const root = join(here, 'game');
+const port = 8080;
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -23,34 +19,20 @@ const TYPES = {
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
-  '.svg': 'image/svg+xml',
-  '.ico': 'image/x-icon',
 };
 
 const server = createServer((req, res) => {
-  const url = new URL(req.url ?? '/', 'http://localhost');
-  let path = decodeURIComponent(url.pathname);
-  if (path.endsWith('/')) path += 'index.html';
-  const target = normalize(join(root, path));
-  if (!target.startsWith(root)) {
-    res.writeHead(403).end('forbidden');
+  const path = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
+  const file = join(root, path === '/' ? 'index.html' : path);
+  if (!file.startsWith(root) || !existsSync(file) || !statSync(file).isFile()) {
+    res.writeHead(404, { 'content-type': 'text/plain' });
+    res.end('not found');
     return;
   }
-  let size;
-  try {
-    size = statSync(target).size;
-  } catch {
-    res.writeHead(404, { 'content-type': 'text/plain' }).end('not found');
-    return;
-  }
-  res.writeHead(200, {
-    'content-type': TYPES[extname(target)] ?? 'application/octet-stream',
-    'content-length': size,
-    'cache-control': 'no-store',
-  });
-  createReadStream(target).pipe(res);
+  res.writeHead(200, { 'content-type': TYPES[extname(file)] ?? 'application/octet-stream' });
+  createReadStream(file).pipe(res);
 });
 
 server.listen(port, () => {
-  console.log(`Harbor at Dusk served at http://localhost:${port}`);
+  console.log(`Harbor at Dusk at http://localhost:${port}`);
 });

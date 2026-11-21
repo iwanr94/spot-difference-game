@@ -1,100 +1,135 @@
-// config.js — levels, the differences of each set, timings and the colour palettes.
-// Everything the rest of the game needs to know about a level lives here.
+// Harbor at Dusk — configuration: level sets, differences, timer, palette.
+// One file, one job: all tunable data lives here, no drawing, no input.
 
-export const PANEL_W = 600;
-export const PANEL_H = 560;
+export const PANEL_W = 640;
+export const PANEL_H = 480;
 
-// Each difference is one deliberate change between the two panels, with the spot
-// (in panel coordinates) a player must click to claim it.
-const DIFF = {
-  gull:      { x: 252, y: 206, r: 34, name: 'a gull that has flown away' },
-  window:    { x: 118, y: 326, r: 27, name: 'a cottage window, dark or lit' },
-  rope:      { x: 206, y: 400, r: 29, name: 'the dock rope, coiled or straight' },
-  flag:      { x: 337, y: 392, r: 25, name: 'the sailboat flag' },
-  star:      { x: 470, y: 44, r: 27, name: 'a star in the sky' },
-  crate:     { x: 150, y: 406, r: 31, name: 'a crate on the dock' },
-  smoke:     { x: 152, y: 268, r: 31, name: 'the cottage chimney smoke' },
-  buoy:      { x: 500, y: 470, r: 27, name: 'the buoy stripe' },
-  cloud:     { x: 330, y: 66, r: 41, name: 'the shape of a cloud' },
-  lamp:      { x: 512, y: 132, r: 31, name: 'the lighthouse lamp' },
-  piling:    { x: 236, y: 436, r: 26, name: 'a post on the pier' },
-  net:       { x: 58, y: 402, r: 31, name: 'the holes in a fishing net' },
-};
-
-function diffs(ids) {
-  return ids.map((id) => Object.assign({ id }, DIFF[id]));
+// A difference: an id, the key world.js uses to render the changed variant,
+// the click zone (x, y, radius) in panel coordinates, and a short label.
+function diff(id, key, x, y, r, label) {
+  return { id, key, x, y, r, label };
 }
 
-export const LEVELS = [
-  {
-    key: 'dusk',
-    title: 'Dusk',
-    blurb: 'The cove at sunset. Ten changes, a long evening.',
-    mood: 'dusk',
-    seconds: 180,
-    hints: 3,
-    diffs: diffs(['gull', 'window', 'rope', 'flag', 'star', 'crate', 'smoke', 'buoy', 'cloud', 'lamp']),
-  },
-  {
-    key: 'night',
-    title: 'Night',
-    blurb: 'Lanterns and stars. Twelve subtler changes.',
-    mood: 'night',
-    seconds: 165,
-    hints: 3,
-    diffs: diffs(['gull', 'window', 'rope', 'flag', 'star', 'crate', 'smoke', 'buoy', 'cloud', 'lamp', 'piling', 'net']),
-  },
-  {
-    key: 'storm',
-    title: 'Storm',
-    blurb: 'Rain on the rocks. Twelve changes, little time.',
-    mood: 'storm',
-    seconds: 120,
-    hints: 2,
-    diffs: diffs(['gull', 'window', 'rope', 'flag', 'star', 'crate', 'smoke', 'buoy', 'cloud', 'lamp', 'piling', 'net']),
-  },
+// Dusk set: 10 differences, 180 seconds, 3 hints.
+const DUSK_DIFFS = [
+  diff('gull', 'gull', 300, 60, 26, 'A gull is missing'),
+  diff('window', 'window', 505, 272, 24, 'Cottage window dark'),
+  diff('rope', 'rope', 560, 312, 26, 'Rope uncoiled'),
+  diff('flag', 'flag', 250, 150, 24, 'Boat flag changed colour'),
+  diff('star', 'star', 180, 40, 22, 'An evening star is gone'),
+  diff('crate', 'crate', 430, 298, 26, 'The crate moved'),
+  diff('smoke', 'smoke', 560, 225, 26, 'Chimney smoke changed'),
+  diff('buoy', 'buoy', 330, 365, 24, 'Buoy stripe missing'),
+  diff('cloud', 'cloud', 350, 100, 28, 'A cloud vanished'),
+  diff('lamp', 'lamp', 90, 115, 26, 'Lighthouse lamp is off'),
 ];
 
-// One palette per mood, read by world.js when it paints the sky, sea and lights.
-export const PALETTES = {
+// Night set: 12 differences, harder (subtler changes), 180 seconds, 3 hints.
+const NIGHT_DIFFS = [
+  diff('gull', 'gull', 300, 60, 26, 'A gull is missing'),
+  diff('window', 'window', 505, 272, 24, 'Cottage window dark'),
+  diff('rope', 'rope', 560, 312, 26, 'Rope uncoiled'),
+  diff('flag', 'flag', 250, 150, 24, 'Boat flag changed colour'),
+  diff('star', 'star', 180, 40, 22, 'A star is gone'),
+  diff('crate', 'crate', 430, 298, 26, 'The crate moved'),
+  diff('smoke', 'smoke', 560, 225, 26, 'Chimney smoke changed'),
+  diff('buoy', 'buoy', 330, 365, 24, 'Buoy stripe missing'),
+  diff('cloud', 'cloud', 350, 100, 28, 'A cloud vanished'),
+  diff('lamp', 'lamp', 90, 115, 26, 'Lighthouse lamp is off'),
+  diff('door', 'door', 545, 285, 22, 'Door lamp is out'),
+  diff('sail', 'sail', 420, 200, 26, 'Second sail changed shade'),
+];
+
+// Storm set: 12 differences, shorter timer, 150 seconds, 2 hints.
+const STORM_DIFFS = [
+  diff('gull', 'gull', 300, 60, 26, 'A gull is missing'),
+  diff('window', 'window', 505, 272, 24, 'Cottage window dark'),
+  diff('rope', 'rope', 560, 312, 26, 'Rope uncoiled'),
+  diff('flag', 'flag', 250, 150, 24, 'Boat flag changed colour'),
+  diff('star', 'star', 180, 40, 22, 'A beacon light is gone'),
+  diff('crate', 'crate', 430, 298, 26, 'The crate moved'),
+  diff('smoke', 'smoke', 560, 225, 26, 'Chimney smoke changed'),
+  diff('buoy', 'buoy', 330, 365, 24, 'Buoy stripe missing'),
+  diff('cloud', 'cloud', 350, 100, 28, 'A cloud vanished'),
+  diff('lamp', 'lamp', 90, 115, 26, 'Lighthouse lamp is off'),
+  diff('door', 'door', 545, 285, 22, 'Door lamp is out'),
+  diff('wave', 'wave', 200, 380, 26, 'A wave crest is missing'),
+];
+
+export const SETS = {
   dusk: {
-    skyTop: '#2a2350', skyMid: '#7a4a72', skyLow: '#e08a54', skyHorizon: '#f7c36a',
-    seaFar: '#c9835c', seaNear: '#243a55', seaDeep: '#16233a',
-    rock: '#4b4656', rockLit: '#6d6270', rockDark: '#2c2a38',
-    lamp: '#ffe9a8', lampGlow: 0.95, starAlpha: 0.25, starCount: 5,
-    glow: 'rgba(255,214,130,0.55)', sun: '#ffd27a', rain: 0, wave: 0.35,
-    wall: '#e7d3b6', wallShade: '#c2a98c', roof: '#8d4b45',
+    id: 'dusk',
+    name: 'Dusk',
+    blurb: 'Golden hour over the harbor. 10 differences.',
+    timeLimit: 180,
+    hints: 3,
+    diffs: DUSK_DIFFS,
   },
   night: {
-    skyTop: '#070d22', skyMid: '#12203f', skyLow: '#243b60', skyHorizon: '#4c6a86',
-    seaFar: '#22374d', seaNear: '#101c2e', seaDeep: '#080f1c',
-    rock: '#2c3040', rockLit: '#434959', rockDark: '#1a1d28',
-    lamp: '#fff2c4', lampGlow: 1, starAlpha: 0.9, starCount: 14,
-    glow: 'rgba(255,226,150,0.62)', sun: '#dfe7f5', rain: 0, wave: 0.22,
-    wall: '#8f8a86', wallShade: '#6b6764', roof: '#4a3a3c',
+    id: 'night',
+    name: 'Night',
+    blurb: 'The harbor sleeps. 12 subtler differences.',
+    timeLimit: 180,
+    hints: 3,
+    diffs: NIGHT_DIFFS,
   },
   storm: {
-    skyTop: '#1d2530', skyMid: '#2e3c4b', skyLow: '#4a5a66', skyHorizon: '#6c7a80',
-    seaFar: '#41606c', seaNear: '#1c2c38', seaDeep: '#0f1a22',
-    rock: '#3a4048', rockLit: '#59616a', rockDark: '#20252b',
-    lamp: '#ffeeb0', lampGlow: 1, starAlpha: 0.05, starCount: 2,
-    glow: 'rgba(255,224,150,0.5)', sun: '#aab6bd', rain: 0.85, wave: 0.9,
-    wall: '#b6b3ac', wallShade: '#8d8a84', roof: '#5b3f3c',
+    id: 'storm',
+    name: 'Storm',
+    blurb: 'Rain on the cove. 12 differences, less time.',
+    timeLimit: 150,
+    hints: 2,
+    diffs: STORM_DIFFS,
   },
 };
 
-// Screen layout: two panels side by side under the top bar.
-export const LAYOUT = {
-  width: 1280,
-  height: 780,
-  topBar: 92,
-  panel: 600,
-  panelW2: 600,
-  panelH: 560,
-  gap: 40,
-  leftX: 20,
-  rightX: 660,
-  panelY: 100,
+export const SET_ORDER = ['dusk', 'night', 'storm'];
+
+// Look a set up by id; falls back to Dusk so a bad key never breaks a run.
+export function getSet(id) {
+  return SETS[id] ?? SETS.dusk;
+}
+
+// Palettes per set: sky top/bottom, sun, sea top/bottom, fog tint.
+export const PALETTES = {
+  dusk: {
+    skyTop: '#2b2a6b', skyBottom: '#f08a4b',
+    sun: '#ffd166', sunGlow: 'rgba(255, 209, 102, 0.55)',
+    seaTop: '#3d6f8e', seaBottom: '#1d3a52',
+    cloud: 'rgba(255, 214, 178, 0.85)',
+    fog: 'rgba(240, 138, 75, 0.10)',
+  },
+  night: {
+    skyTop: '#050914', skyBottom: '#1b2a52',
+    sun: '#e8ecff', sunGlow: 'rgba(232, 236, 255, 0.35)',
+    seaTop: '#16283f', seaBottom: '#0a1526',
+    cloud: 'rgba(150, 170, 220, 0.35)',
+    fog: 'rgba(27, 42, 82, 0.15)',
+  },
+  storm: {
+    skyTop: '#3a4148', skyBottom: '#7d8894',
+    sun: '#cfd6da', sunGlow: 'rgba(207, 214, 218, 0.25)',
+    seaTop: '#4a5a63', seaBottom: '#26333b',
+    cloud: 'rgba(60, 66, 72, 0.9)',
+    fog: 'rgba(125, 136, 148, 0.18)',
+  },
 };
 
-export const MARK = { ring: '#7dfcc4', hint: '#ffd166', wrong: '#ff6b6b' };
+export const COLORS = {
+  rock: '#4a4038',
+  rockDark: '#332c26',
+  tower: '#f5efe0',
+  towerStripe: '#c0392b',
+  roof: '#8a3b2e',
+  cottageWall: '#e8dcc0',
+  wood: '#6b4a2f',
+  woodDark: '#4e3421',
+  sailWhite: '#f7f3e8',
+  sailShade: '#c9d4de',
+  hull: '#5a2e22',
+  buoyRed: '#c0392b',
+  mark: '#2ecc71',
+  markRing: '#27ae60',
+  wrong: '#e74c3c',
+  hint: '#f1c40f',
+};

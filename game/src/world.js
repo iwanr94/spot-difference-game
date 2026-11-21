@@ -1,563 +1,356 @@
-// world.js — paints one panel of the cove: sky, headland, cottage, dock, boats,
-// buoy and lighthouse. Pass a Set of changed ids to paint panel B, or an empty
-// Set to paint panel A. Every difference in config.js has its drawing here.
+// Harbor at Dusk — world: draws the lighthouse-cove scene on a canvas.
+// One file, one job: given a set and a panel variant ('left' / 'right') it
+// paints the scene. The right panel applies the set's differences, so the
+// two pictures are near-identical but not the same.
 
-import { PANEL_W, PANEL_H, PALETTES } from './config.js';
+import { PANEL_W, PANEL_H, PALETTES, COLORS } from './config.js';
 
-const HORIZON = 300;
+// Fixed star positions (night sky + the one evening star of the dusk set).
+const STARS = [
+  [60, 40], [130, 90], [180, 40], [240, 70], [330, 35],
+  [410, 80], [470, 45], [560, 110], [600, 50], [90, 130],
+];
 
-function ridge(ctx, pts, fill, stroke) {
+// Fixed gull positions. The gull at index 1 is the 'gull' difference.
+const GULLS = [
+  [180, 80],
+  [300, 60],
+  [450, 90],
+];
+
+// Cloud puffs: [x, y, scale]. The cloud at index 1 is the 'cloud' difference.
+const CLOUDS = [
+  [120, 60, 1.0],
+  [350, 100, 1.2],
+  [520, 70, 0.8],
+];
+
+function ellipse(ctx, x, y, rx, ry) {
   ctx.beginPath();
-  ctx.moveTo(pts[0][0], pts[0][1]);
-  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
-  ctx.closePath();
-  ctx.fillStyle = fill;
+  ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
   ctx.fill();
-  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 1.5; ctx.stroke(); }
 }
 
-function sky(ctx, p, ch) {
-  const g = ctx.createLinearGradient(0, 0, 0, HORIZON);
-  g.addColorStop(0, p.skyTop);
-  g.addColorStop(0.45, p.skyMid);
-  g.addColorStop(0.78, p.skyLow);
-  g.addColorStop(1, p.skyHorizon);
+function star4(ctx, x, y, r, color) {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(x, y - r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.quadraticCurveTo(x, y, x, y + r);
+  ctx.quadraticCurveTo(x, y, x - r, y);
+  ctx.quadraticCurveTo(x, y, x, y - r);
+  ctx.fill();
+}
+
+function drawSky(ctx, set, changed) {
+  const pal = PALETTES[set.id];
+  const g = ctx.createLinearGradient(0, 0, 0, 300);
+  g.addColorStop(0, pal.skyTop);
+  g.addColorStop(1, pal.skyBottom);
   ctx.fillStyle = g;
-  ctx.fillRect(0, 0, PANEL_W, HORIZON);
+  ctx.fillRect(0, 0, PANEL_W, 300);
 
-  // Stars: a fixed sprinkle, denser with each palette. One of them belongs to
-  // the "star" difference and only panel A keeps it.
-  const stars = [[70, 36], [120, 22], [182, 52], [540, 28], [566, 96], [38, 104],
-    [300, 26], [410, 70], [496, 96], [92, 74], [246, 58], [352, 104], [556, 58], [14, 60]];
-  ctx.fillStyle = '#fff';
-  for (let i = 0; i < Math.min(p.starCount, stars.length); i++) {
-    const [sx, sy] = stars[i];
-    ctx.globalAlpha = p.starAlpha * (0.55 + 0.45 * Math.sin(i * 2.7));
-    ctx.beginPath();
-    ctx.arc(sx, sy, i % 3 === 0 ? 1.7 : 1.1, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  ctx.globalAlpha = 1;
-
-  if (!ch.has('star')) {
-    ctx.fillStyle = '#fffbe8';
-    ctx.globalAlpha = 0.55 + 0.45 * p.starAlpha;
-    star4(ctx, 470, 44, 7);
-    ctx.globalAlpha = 1;
+  // Sun (dusk/storm) or moon (night) low over the water.
+  ctx.fillStyle = pal.sunGlow;
+  ellipse(ctx, 520, 180, 52, 52);
+  ctx.fillStyle = pal.sun;
+  ellipse(ctx, 520, 180, 30, 30);
+  if (set.id === 'night') {
+    ctx.fillStyle = pal.skyTop;
+    ellipse(ctx, 530, 172, 24, 24);
   }
 
-  // Sun or moon low over the water.
-  ctx.fillStyle = p.sun;
-  ctx.globalAlpha = 0.92;
-  ctx.beginPath();
-  ctx.arc(420, 232, p.mood === 'night' ? 20 : 34, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.globalAlpha = 1;
-
-  cloud(ctx, 140, 96, 1.0, p);
-  cloud(ctx, 330, 66, 1.2, p, ch.has('cloud'));
-  cloud(ctx, 486, 156, 0.78, p);
-}
-
-function star4(ctx, x, y, r) {
-  ctx.beginPath();
-  for (let i = 0; i < 8; i++) {
-    const a = (Math.PI / 4) * i - Math.PI / 2;
-    const rr = i % 2 ? r * 0.34 : r;
-    ctx.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
-  }
-  ctx.closePath();
-  ctx.fill();
-}
-
-function cloud(ctx, x, y, s, p, changed) {
-  ctx.globalAlpha = p.mood === 'storm' ? 0.55 : 0.42;
-  ctx.fillStyle = p.mood === 'storm' ? '#8b98a3' : '#f4cfae';
-  ctx.beginPath();
-  const puffs = changed
-    ? [[-26, 4, 20], [4, -8, 26], [34, 4, 18], [60, 8, 13]]
-    : [[-30, 6, 18], [-6, -8, 26], [26, -2, 22], [56, 8, 15]];
-  for (const [dx, dy, r] of puffs) {
-    ctx.moveTo(x + dx * s + r * s, y + dy * s);
-    ctx.arc(x + dx * s, y + dy * s, r * s, 0, Math.PI * 2);
-  }
-  ctx.fill();
-  ctx.globalAlpha = 1;
-}
-
-function gull(ctx, x, y, s, tone) {
-  ctx.strokeStyle = tone;
-  ctx.lineWidth = 2 * s;
-  ctx.lineCap = 'round';
-  ctx.beginPath();
-  ctx.moveTo(x - 11 * s, y);
-  ctx.quadraticCurveTo(x - 5 * s, y - 6 * s, x, y - 1 * s);
-  ctx.quadraticCurveTo(x + 5 * s, y - 6 * s, x + 11 * s, y);
-  ctx.stroke();
-}
-
-function sea(ctx, p, ch) {
-  const g = ctx.createLinearGradient(0, HORIZON, 0, PANEL_H);
-  g.addColorStop(0, p.seaFar);
-  g.addColorStop(0.18, p.seaNear);
-  g.addColorStop(1, p.seaDeep);
-  ctx.fillStyle = g;
-  ctx.fillRect(0, HORIZON, PANEL_W, PANEL_H - HORIZON);
-
-  // Sun path on the water.
-  ctx.strokeStyle = p.glow;
-  ctx.lineWidth = 2;
-  for (let i = 0; i < 14; i++) {
-    const y = HORIZON + 8 + i * 15;
-    const w = 26 + i * 7;
-    const a = 0.08 + 0.5 * (1 - i / 14);
-    ctx.globalAlpha = a;
-    ctx.beginPath();
-    ctx.moveTo(420 - w * 0.35, y);
-    ctx.lineTo(420 + w * 0.35, y);
-    ctx.stroke();
-  }
-  ctx.globalAlpha = 1;
-
-  // Long swell lines; the storm raises them.
-  const amp = 2 + p.wave * 7;
-  ctx.strokeStyle = 'rgba(255,255,255,0.16)';
-  for (let row = 0; row < 9; row++) {
-    const y = HORIZON + 22 + row * 29;
-    ctx.lineWidth = 0.8 + row * 0.18;
-    ctx.beginPath();
-    for (let x = 0; x <= PANEL_W; x += 12) {
-      const yy = y + Math.sin((x / 46) + row * 1.7) * amp * (0.4 + row * 0.09);
-      if (x === 0) ctx.moveTo(x, yy); else ctx.lineTo(x, yy);
+  // Stars: night shows them all; dusk shows one bright evening star.
+  if (set.id === 'night') {
+    for (const [x, y] of STARS) {
+      if (changed('star') && x === 180 && y === 40) continue;
+      star4(ctx, x, y, 4, '#ffffff');
     }
-    ctx.globalAlpha = 0.5 - row * 0.04;
-    ctx.stroke();
+  } else if (!changed('star')) {
+    star4(ctx, 180, 40, 7, '#fff7cc');
   }
-  ctx.globalAlpha = 1;
-}
 
-function headland(ctx, p) {
-  const rock = p.rock, lit = p.rockLit, dark = p.rockDark;
-  // near point, left
-  ridge(ctx, [[0, 560], [0, 358], [34, 350], [64, 366], [98, 348], [132, 364],
-    [168, 350], [196, 378], [214, 410], [206, 450], [178, 486], [150, 520],
-    [128, 560]], rock, dark);
-  ridge(ctx, [[0, 560], [0, 372], [30, 366], [62, 378], [96, 362], [130, 376],
-    [166, 364], [190, 388], [204, 414], [196, 448], [168, 480], [140, 514],
-    [118, 560]], lit, null);
-  ridge(ctx, [[0, 560], [0, 392], [40, 386], [74, 396], [110, 382], [148, 394],
-    [176, 410], [184, 440], [160, 470], [130, 506], [108, 560]], rock, null);
-
-  // far point on the right, under the lighthouse
-  ridge(ctx, [[600, 560], [600, 330], [566, 326], [532, 334], [500, 338],
-    [472, 352], [452, 374], [432, 400], [434, 452], [452, 505], [474, 560]], dark, null);
-  ridge(ctx, [[600, 560], [600, 342], [568, 336], [536, 344], [506, 348],
-    [478, 360], [458, 380], [440, 404], [442, 452], [460, 502], [482, 560]], rock, null);
-  ridge(ctx, [[600, 560], [600, 360], [572, 354], [540, 362], [512, 364],
-    [486, 374], [466, 392], [452, 412], [456, 452], [472, 498], [492, 560]], lit, null);
-
-  // spray at the waterline
-  ctx.fillStyle = 'rgba(255,255,255,0.14)';
-  for (let i = 0; i < 9; i++) {
-    ctx.beginPath();
-    ctx.ellipse(150 + i * 46, 512 + (i % 3) * 9, 30, 5, 0, 0, Math.PI * 2);
-    ctx.fill();
+  // Clouds drift across the sky.
+  ctx.fillStyle = pal.cloud;
+  for (let i = 0; i < CLOUDS.length; i++) {
+    const [x, y, s] = CLOUDS[i];
+    if (changed('cloud') && i === 1) continue;
+    ellipse(ctx, x, y, 34 * s, 12 * s);
+    ellipse(ctx, x - 22 * s, y + 4 * s, 22 * s, 9 * s);
+    ellipse(ctx, x + 24 * s, y + 4 * s, 24 * s, 10 * s);
   }
 }
 
-function cottage(ctx, p, ch) {
-  // body
-  ctx.fillStyle = p.wall;
-  ctx.fillRect(62, 300, 114, 62);
-  ctx.fillStyle = p.wallShade;
-  ctx.fillRect(62, 344, 114, 18);
+function drawSea(ctx, set, changed) {
+  const pal = PALETTES[set.id];
+  const g = ctx.createLinearGradient(0, 300, 0, PANEL_H);
+  g.addColorStop(0, pal.seaTop);
+  g.addColorStop(1, pal.seaBottom);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 300, PANEL_W, PANEL_H - 300);
 
-  // roof
-  ctx.fillStyle = p.roof;
-  ctx.beginPath();
-  ctx.moveTo(52, 302);
-  ctx.lineTo(119, 262);
-  ctx.lineTo(186, 302);
-  ctx.closePath();
-  ctx.fill();
-
-  // chimney, and the smoke that is its own difference
-  ctx.fillStyle = p.wallShade;
-  ctx.fillRect(148, 268, 14, 26);
-  ctx.fillStyle = 'rgba(236,236,240,0.5)';
-  const puffs = ch.has('smoke')
-    ? [[152, 258, 9], [156, 242, 11], [166, 228, 9]]
-    : [[152, 258, 7], [150, 244, 10], [158, 228, 13], [146, 210, 9]];
-  for (const [sx, sy, r] of puffs) {
-    ctx.beginPath();
-    ctx.arc(sx, sy, r, 0, Math.PI * 2);
-    ctx.fill();
+  // Sun path shimmering on the water.
+  ctx.fillStyle = 'rgba(255, 209, 102, 0.25)';
+  for (let i = 0; i < 6; i++) {
+    const y = 316 + i * 24;
+    const w = 60 + i * 26;
+    ctx.fillRect(520 - w / 2, y, w, 5);
   }
 
-  // the window: warm in panel A, cold and dark when changed
-  const lit = !ch.has('window');
-  ctx.fillStyle = lit ? '#ffd88a' : '#39404c';
-  ctx.fillRect(106, 314, 26, 24);
-  ctx.strokeStyle = lit ? '#8a5c34' : '#262c36';
+  // Wave crests. The crest at (200, 380) is the storm set's 'wave' difference.
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
   ctx.lineWidth = 2;
-  ctx.strokeRect(106, 314, 26, 24);
-  ctx.beginPath();
-  ctx.moveTo(119, 314); ctx.lineTo(119, 338);
-  ctx.moveTo(106, 326); ctx.lineTo(132, 326);
-  ctx.stroke();
-  if (lit) {
-    ctx.fillStyle = 'rgba(255,214,130,0.22)';
+  const crests = [[120, 340], [200, 380], [290, 420], [430, 350], [520, 410], [580, 360]];
+  for (const [x, y] of crests) {
+    if (changed('wave') && x === 200 && y === 380) continue;
     ctx.beginPath();
-    ctx.arc(119, 326, 30, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  // door
-  ctx.fillStyle = '#5d3c31';
-  ctx.fillRect(74, 330, 20, 32);
-  ctx.fillStyle = '#c9a86a';
-  ctx.beginPath();
-  ctx.arc(89, 348, 1.8, 0, Math.PI * 2);
-  ctx.fill();
-}
-
-function dock(ctx, p, ch) {
-  ctx.fillStyle = '#5a4636';
-  ctx.beginPath();
-  ctx.moveTo(0, 438);
-  ctx.lineTo(252, 424);
-  ctx.lineTo(252, 446);
-  ctx.lineTo(0, 460);
-  ctx.closePath();
-  ctx.fill();
-
-  // plank seams
-  ctx.strokeStyle = 'rgba(0,0,0,0.28)';
-  ctx.lineWidth = 1;
-  for (let x = 12; x < 252; x += 18) {
-    ctx.beginPath();
-    ctx.moveTo(x, 440 - x * 0.05);
-    ctx.lineTo(x, 458 - x * 0.05);
+    ctx.arc(x, y, 18, Math.PI * 1.15, Math.PI * 1.85);
     ctx.stroke();
   }
 
-  // pilings below the deck
-  for (const x of [92, 172, 240]) {
-    ctx.fillStyle = '#3d3125';
-    ctx.fillRect(x, 444, 9, 52 + (x % 7));
-    ctx.fillStyle = 'rgba(255,255,255,0.12)';
-    ctx.fillRect(x, 444, 3, 52);
-  }
-
-  // the marked piling: a rope band when changed
-  if (ch.has('piling')) {
-    ctx.strokeStyle = '#e8c987';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(236, 452);
-    ctx.lineTo(249, 452);
-    ctx.moveTo(236, 458);
-    ctx.lineTo(249, 458);
-    ctx.stroke();
-  }
-
-  // rope on the deck: a coil, or a straight run to the bollard
-  ctx.lineCap = 'round';
-  if (ch.has('rope')) {
-    ctx.strokeStyle = '#d9b678';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(176, 404);
-    ctx.quadraticCurveTo(206, 396, 236, 410);
-    ctx.stroke();
-  } else {
-    ctx.strokeStyle = '#e5c084';
-    ctx.lineWidth = 3;
-    for (let i = 0; i < 3; i++) {
+  // Storm rain streaks slanting over the water.
+  if (set.id === 'storm') {
+    ctx.strokeStyle = 'rgba(200, 220, 235, 0.5)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 40; i++) {
+      const x = (i * 53) % PANEL_W;
+      const y = 300 + ((i * 37) % 170);
       ctx.beginPath();
-      ctx.ellipse(206, 401, 15 - i * 4, 6 - i * 1.6, 0.12, 0, Math.PI * 2);
+      ctx.moveTo(x, y);
+      ctx.lineTo(x - 6, y + 14);
       ctx.stroke();
     }
   }
-
-  // crates: two on the deck, one once the difference is applied
-  crate(ctx, 140, 398, 26);
-  if (!ch.has('crate')) crate(ctx, 168, 404, 20);
 }
 
-function crate(ctx, x, y, s) {
-  ctx.fillStyle = '#a9763f';
-  ctx.fillRect(x, y, s, s * 0.8);
-  ctx.strokeStyle = '#6d4626';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(x, y, s, s * 0.8);
+function drawRocks(ctx) {
+  ctx.fillStyle = COLORS.rock;
   ctx.beginPath();
-  ctx.moveTo(x, y);
-  ctx.lineTo(x + s, y + s * 0.8);
-  ctx.moveTo(x + s, y);
-  ctx.lineTo(x, y + s * 0.8);
-  ctx.stroke();
+  ctx.moveTo(30, 320);
+  ctx.lineTo(55, 288);
+  ctx.lineTo(90, 296);
+  ctx.lineTo(125, 284);
+  ctx.lineTo(160, 318);
+  ctx.lineTo(150, 330);
+  ctx.lineTo(40, 330);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = COLORS.rockDark;
+  ctx.beginPath();
+  ctx.moveTo(55, 320);
+  ctx.lineTo(80, 300);
+  ctx.lineTo(105, 318);
+  ctx.lineTo(90, 330);
+  ctx.lineTo(60, 330);
+  ctx.closePath();
+  ctx.fill();
 }
 
-function net(ctx, p, ch) {
-  const x0 = 34, y0 = 382, w = 50, h = 44;
-  ctx.fillStyle = 'rgba(20,24,30,0.35)';
-  ctx.fillRect(x0, y0, w, h);
-  ctx.strokeStyle = '#cfd8cf';
-  ctx.lineWidth = 1.4;
-  const step = ch.has('net') ? 22 : 12;
-  for (let x = x0; x <= x0 + w; x += step) {
+function drawLighthouse(ctx, set, changed) {
+  const lampOn = !changed('lamp');
+  // Tower with red stripes.
+  ctx.fillStyle = COLORS.tower;
+  ctx.fillRect(67, 130, 46, 170);
+  ctx.fillStyle = COLORS.towerStripe;
+  ctx.fillRect(67, 170, 46, 18);
+  ctx.fillRect(67, 230, 46, 18);
+  // Gallery and lamp room.
+  ctx.fillStyle = COLORS.woodDark;
+  ctx.fillRect(60, 118, 60, 12);
+  ctx.fillStyle = lampOn ? '#ffd166' : '#3a3f4a';
+  ctx.fillRect(72, 96, 36, 22);
+  ctx.fillStyle = COLORS.woodDark;
+  ctx.fillRect(66, 92, 48, 6);
+  // Light beam sweeping right when the lamp is on.
+  if (lampOn) {
+    ctx.fillStyle = 'rgba(255, 209, 102, 0.28)';
     ctx.beginPath();
-    ctx.moveTo(x, y0);
-    ctx.lineTo(x + h * 0.5, y0 + h);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(x, y0);
-    ctx.lineTo(x - h * 0.5, y0 + h);
-    ctx.stroke();
-  }
-  ctx.lineWidth = 2.2;
-  ctx.strokeStyle = '#e8dcc0';
-  ctx.beginPath();
-  ctx.moveTo(x0 - 4, y0);
-  ctx.lineTo(x0 + w + 4, y0 + 2);
-  ctx.stroke();
-  // float beads
-  for (let i = 0; i < 4; i++) {
-    ctx.fillStyle = i % 2 ? '#d76b56' : '#e6d7a8';
-    ctx.beginPath();
-    ctx.arc(x0 + 6 + i * 12, y0 + h + 4, 3, 0, Math.PI * 2);
+    ctx.moveTo(108, 107);
+    ctx.lineTo(320, 70);
+    ctx.lineTo(320, 150);
+    ctx.closePath();
     ctx.fill();
+    ctx.fillStyle = 'rgba(255, 209, 102, 0.5)';
+    ellipse(ctx, 90, 107, 26, 26);
   }
 }
 
-function sailboat(ctx, p, ch) {
-  const x = 330, y = 452;
-  // mast and sail
-  ctx.strokeStyle = '#453226';
+function drawCottage(ctx, set, changed) {
+  // Walls, roof, chimney.
+  ctx.fillStyle = COLORS.cottageWall;
+  ctx.fillRect(470, 252, 120, 48);
+  ctx.fillStyle = COLORS.roof;
+  ctx.beginPath();
+  ctx.moveTo(462, 252);
+  ctx.lineTo(530, 222);
+  ctx.lineTo(598, 252);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = COLORS.woodDark;
+  ctx.fillRect(556, 224, 12, 30);
+  // Door.
+  ctx.fillStyle = COLORS.wood;
+  ctx.fillRect(540, 272, 18, 28);
+  // Door lamp: on in the left panel, out in the right (night/storm sets).
+  if (!changed('door')) {
+    ctx.fillStyle = '#ffd166';
+    ellipse(ctx, 549, 266, 4, 4);
+  }
+  // Window: lit warm in the left panel, dark in the right.
+  ctx.fillStyle = changed('window') ? '#2c3550' : '#ffd166';
+  ctx.fillRect(496, 264, 20, 18);
+  ctx.strokeStyle = COLORS.woodDark;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(496, 264, 20, 18);
+  ctx.beginPath();
+  ctx.moveTo(506, 264);
+  ctx.lineTo(506, 282);
+  ctx.moveTo(496, 273);
+  ctx.lineTo(516, 273);
+  ctx.stroke();
+  // Chimney smoke: a curl in the left panel, a straight column in the right.
+  ctx.fillStyle = 'rgba(230, 230, 230, 0.75)';
+  if (changed('smoke')) {
+    ellipse(ctx, 562, 214, 8, 6);
+    ellipse(ctx, 562, 202, 7, 6);
+    ellipse(ctx, 562, 190, 6, 5);
+  } else {
+    ellipse(ctx, 566, 214, 8, 6);
+    ellipse(ctx, 574, 202, 7, 6);
+    ellipse(ctx, 584, 192, 6, 5);
+  }
+}
+
+function drawBoat(ctx, set, changed, x, y, scale, isSecond) {
+  // Hull.
+  ctx.fillStyle = COLORS.hull;
+  ctx.beginPath();
+  ctx.moveTo(x - 34 * scale, y);
+  ctx.lineTo(x + 34 * scale, y);
+  ctx.lineTo(x + 24 * scale, y + 12 * scale);
+  ctx.lineTo(x - 24 * scale, y + 12 * scale);
+  ctx.closePath();
+  ctx.fill();
+  // Mast.
+  ctx.strokeStyle = COLORS.woodDark;
   ctx.lineWidth = 3;
   ctx.beginPath();
   ctx.moveTo(x, y);
-  ctx.lineTo(x, 388);
+  ctx.lineTo(x, y - 62 * scale);
   ctx.stroke();
-  ctx.fillStyle = 'rgba(246,240,226,0.94)';
+  // Sail: the second boat's sail changes shade in the night set.
+  const sailColor = isSecond && changed('sail') ? COLORS.sailShade : COLORS.sailWhite;
+  ctx.fillStyle = sailColor;
   ctx.beginPath();
-  ctx.moveTo(x + 3, 392);
-  ctx.lineTo(x + 46, 432);
-  ctx.lineTo(x + 3, 432);
+  ctx.moveTo(x, y - 60 * scale);
+  ctx.lineTo(x, y - 4 * scale);
+  ctx.lineTo(x + 26 * scale, y - 4 * scale);
   ctx.closePath();
   ctx.fill();
-  ctx.fillStyle = 'rgba(232,224,208,0.85)';
-  ctx.beginPath();
-  ctx.moveTo(x - 3, 398);
-  ctx.lineTo(x - 32, 432);
-  ctx.lineTo(x - 3, 432);
-  ctx.closePath();
-  ctx.fill();
-
-  // flag: red in panel A, teal once the difference is applied
-  ctx.fillStyle = ch.has('flag') ? '#4ec3c0' : '#e2564a';
-  ctx.beginPath();
-  ctx.moveTo(x, 388);
-  ctx.lineTo(x + 20, 392);
-  ctx.lineTo(x, 398);
-  ctx.closePath();
-  ctx.fill();
-
-  // hull
-  ctx.fillStyle = '#2f4a5c';
-  ctx.beginPath();
-  ctx.moveTo(x - 36, y);
-  ctx.lineTo(x + 36, y);
-  ctx.quadraticCurveTo(x + 26, y + 22, x, y + 24);
-  ctx.quadraticCurveTo(x - 26, y + 22, x - 36, y);
-  ctx.closePath();
-  ctx.fill();
-  ctx.strokeStyle = 'rgba(255,255,255,0.25)';
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(x - 34, y + 2);
-  ctx.lineTo(x + 34, y + 2);
-  ctx.stroke();
-
-  // reflection
-  ctx.fillStyle = 'rgba(255,255,255,0.07)';
-  ctx.beginPath();
-  ctx.ellipse(x, y + 34, 30, 8, 0, 0, Math.PI * 2);
-  ctx.fill();
-}
-
-function rowboat(ctx, p) {
-  const x = 268, y = 508;
-  ctx.fillStyle = '#7c5a3b';
-  ctx.beginPath();
-  ctx.moveTo(x - 26, y);
-  ctx.quadraticCurveTo(x, y + 18, x + 26, y);
-  ctx.quadraticCurveTo(x, y + 6, x - 26, y);
-  ctx.fill();
-  ctx.strokeStyle = '#4a3423';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(x - 24, y + 1);
-  ctx.quadraticCurveTo(x, y + 14, x + 24, y + 1);
-  ctx.stroke();
-}
-
-function buoy(ctx, p, ch) {
-  const x = 500, y = 470;
-  ctx.fillStyle = '#e6e2d6';
-  ctx.beginPath();
-  ctx.moveTo(x - 9, y - 14);
-  ctx.lineTo(x + 9, y - 14);
-  ctx.lineTo(x + 7, y + 12);
-  ctx.lineTo(x - 7, y + 12);
-  ctx.closePath();
-  ctx.fill();
-  // the stripe: white in A, signal red once changed
-  ctx.fillStyle = ch.has('buoy') ? '#d94a3d' : '#f2efe4';
-  ctx.fillRect(x - 9, y - 3, 18, 8);
-  ctx.fillStyle = '#c8452f';
-  ctx.beginPath();
-  ctx.moveTo(x - 10, y - 14);
-  ctx.lineTo(x, y - 26);
-  ctx.lineTo(x + 10, y - 14);
-  ctx.closePath();
-  ctx.fill();
-  // waterline ripple
-  ctx.strokeStyle = 'rgba(255,255,255,0.3)';
-  ctx.lineWidth = 1.4;
-  ctx.beginPath();
-  ctx.ellipse(x, y + 13, 16, 4, 0, 0, Math.PI * 2);
-  ctx.stroke();
-}
-
-function lighthouse(ctx, p, ch) {
-  const cx = 512;
-  // tower
-  ctx.fillStyle = '#efe9dd';
-  ctx.beginPath();
-  ctx.moveTo(cx - 27, 332);
-  ctx.lineTo(cx - 19, 158);
-  ctx.lineTo(cx + 19, 158);
-  ctx.lineTo(cx + 27, 332);
-  ctx.closePath();
-  ctx.fill();
-
-  // red bands, clipped to the tower
-  ctx.save();
-  ctx.beginPath();
-  ctx.moveTo(cx - 27, 332);
-  ctx.lineTo(cx - 19, 158);
-  ctx.lineTo(cx + 19, 158);
-  ctx.lineTo(cx + 27, 332);
-  ctx.closePath();
-  ctx.clip();
-  ctx.fillStyle = '#b8443c';
-  ctx.fillRect(cx - 30, 186, 60, 26);
-  ctx.fillRect(cx - 30, 238, 60, 24);
-  ctx.fillStyle = 'rgba(0,0,0,0.13)';
-  ctx.fillRect(cx + 8, 150, 24, 200);
-  ctx.restore();
-
-  // door and windows
-  ctx.fillStyle = '#4b3a30';
-  ctx.fillRect(cx - 6, 306, 12, 26);
-
-  // gallery
-  ctx.fillStyle = '#3f3a36';
-  ctx.fillRect(cx - 25, 154, 50, 6);
-  ctx.strokeStyle = '#3f3a36';
-  ctx.lineWidth = 2;
-  for (let i = -20; i <= 20; i += 8) {
+  // Flag on the first boat: red left, blue right.
+  if (!isSecond) {
+    ctx.fillStyle = changed('flag') ? '#2e6fd8' : '#c0392b';
     ctx.beginPath();
-    ctx.moveTo(cx + i, 154);
-    ctx.lineTo(cx + i, 144);
-    ctx.stroke();
-  }
-
-  // lantern room
-  const on = !ch.has('lamp');
-  ctx.fillStyle = on ? p.lamp : '#26303c';
-  ctx.fillRect(cx - 13, 120, 26, 24);
-  ctx.strokeStyle = '#3f3a36';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(cx - 13, 120, 26, 24);
-  ctx.beginPath();
-  ctx.moveTo(cx - 4, 120);
-  ctx.lineTo(cx - 4, 144);
-  ctx.moveTo(cx + 4, 120);
-  ctx.lineTo(cx + 4, 144);
-  ctx.stroke();
-
-  // roof
-  ctx.fillStyle = '#3f3a36';
-  ctx.beginPath();
-  ctx.moveTo(cx - 17, 120);
-  ctx.lineTo(cx, 100);
-  ctx.lineTo(cx + 17, 120);
-  ctx.closePath();
-  ctx.fill();
-
-  if (on) {
-    const g = ctx.createRadialGradient(cx, 132, 2, cx, 132, 78);
-    g.addColorStop(0, 'rgba(255,236,170,0.85)');
-    g.addColorStop(0.35, 'rgba(255,220,140,0.24)');
-    g.addColorStop(1, 'rgba(255,220,140,0)');
-    ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.arc(cx, 132, 78, 0, Math.PI * 2);
+    ctx.moveTo(x, y - 62 * scale);
+    ctx.lineTo(x + 18 * scale, y - 56 * scale);
+    ctx.lineTo(x, y - 50 * scale);
+    ctx.closePath();
     ctx.fill();
   }
 }
 
-function rain(ctx, p) {
-  if (!p.rain) return;
-  ctx.strokeStyle = 'rgba(210,226,236,0.35)';
-  ctx.lineWidth = 1;
-  for (let i = 0; i < 130; i++) {
-    const x = (i * 97) % PANEL_W;
-    const y = (i * 53) % PANEL_H;
+function drawDock(ctx, set, changed) {
+  // Wooden dock planks reaching from the cottage side.
+  ctx.fillStyle = COLORS.wood;
+  ctx.fillRect(380, 308, 260, 14);
+  ctx.fillStyle = COLORS.woodDark;
+  for (let x = 396; x < 640; x += 32) {
+    ctx.fillRect(x, 308, 2, 14);
+  }
+  ctx.fillStyle = COLORS.woodDark;
+  ctx.fillRect(392, 322, 8, 26);
+  ctx.fillRect(600, 322, 8, 26);
+
+  // Crate on the dock: left spot in the left panel, shifted right in the right.
+  const crateX = changed('crate') ? 470 : 430;
+  ctx.fillStyle = '#a8763e';
+  ctx.fillRect(crateX - 13, 272, 26, 26);
+  ctx.strokeStyle = COLORS.woodDark;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(crateX - 13, 272, 26, 26);
+  ctx.beginPath();
+  ctx.moveTo(crateX - 13, 272);
+  ctx.lineTo(crateX + 13, 298);
+  ctx.moveTo(crateX + 13, 272);
+  ctx.lineTo(crateX - 13, 298);
+  ctx.stroke();
+
+  // Rope: a neat coil in the left panel, a straight loose line in the right.
+  ctx.strokeStyle = '#d9c08a';
+  ctx.lineWidth = 3;
+  if (changed('rope')) {
     ctx.beginPath();
-    ctx.moveTo(x, y);
-    ctx.lineTo(x - 4, y + 13);
+    ctx.moveTo(540, 316);
+    ctx.lineTo(596, 316);
+    ctx.stroke();
+  } else {
+    for (let i = 0; i < 3; i++) {
+      ctx.beginPath();
+      ctx.arc(566, 312, 12 - i * 3, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+}
+
+function drawBuoy(ctx, set, changed) {
+  // A red buoy bobbing near the boats; its white band is the difference.
+  ctx.fillStyle = COLORS.buoyRed;
+  ctx.beginPath();
+  ctx.moveTo(318, 352);
+  ctx.lineTo(342, 352);
+  ctx.lineTo(338, 372);
+  ctx.lineTo(322, 372);
+  ctx.closePath();
+  ctx.fill();
+  if (!changed('buoy')) {
+    ctx.fillStyle = '#f5efe0';
+    ctx.fillRect(319, 359, 22, 6);
+  }
+  ctx.fillStyle = COLORS.woodDark;
+  ctx.fillRect(328, 344, 4, 8);
+}
+
+function drawGulls(ctx, set, changed) {
+  ctx.strokeStyle = '#2c2c34';
+  ctx.lineWidth = 2;
+  for (let i = 0; i < GULLS.length; i++) {
+    const [x, y] = GULLS[i];
+    if (changed('gull') && i === 1) continue;
+    ctx.beginPath();
+    ctx.moveTo(x - 9, y);
+    ctx.quadraticCurveTo(x - 4, y - 6, x, y);
+    ctx.quadraticCurveTo(x + 4, y - 6, x + 9, y);
     ctx.stroke();
   }
 }
 
-function vignette(ctx) {
-  const g = ctx.createLinearGradient(0, 0, 0, PANEL_H);
-  g.addColorStop(0, 'rgba(10,8,20,0.16)');
-  g.addColorStop(0.5, 'rgba(0,0,0,0)');
-  g.addColorStop(1, 'rgba(6,10,18,0.22)');
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, PANEL_W, PANEL_H);
-}
-
-// Paint one whole panel. `changes` holds the ids of the differences this panel
-// shows; pass an empty set for the left picture.
-export function drawScene(ctx, changes, mood) {
-  const p = PALETTES[mood];
-  p.mood = mood;
-  ctx.save();
+// Paint the whole scene for one panel. variant 'left' is the reference;
+// variant 'right' applies every difference of the set.
+export function drawScene(ctx, set, variant) {
+  const right = variant === 'right';
+  const changed = (key) => right && set.diffs.some((d) => d.key === key);
   ctx.clearRect(0, 0, PANEL_W, PANEL_H);
-  sky(ctx, p, changes);
-  sea(ctx, p, changes);
-  headland(ctx, p);
-  net(ctx, p, changes);
-  dock(ctx, p, changes);
-  cottage(ctx, p, changes);
-  rowboat(ctx, p);
-  sailboat(ctx, p, changes);
-  buoy(ctx, p, changes);
-  lighthouse(ctx, p, changes);
-
-  // gulls: the middle one only stays in panel A
-  const tone = mood === 'storm' ? 'rgba(240,244,250,0.75)' : 'rgba(255,250,240,0.9)';
-  gull(ctx, 110, 150, 1.1, tone);
-  gull(ctx, 196, 118, 0.85, tone);
-  if (!changes.has('gull')) gull(ctx, 252, 206, 1.3, tone);
-
-  rain(ctx, p);
-  vignette(ctx);
-  ctx.restore();
+  drawSky(ctx, set, changed);
+  drawSea(ctx, set, changed);
+  drawRocks(ctx);
+  drawLighthouse(ctx, set, changed);
+  drawCottage(ctx, set, changed);
+  drawDock(ctx, set, changed);
+  drawBoat(ctx, set, changed, 250, 330, 1.0, false);
+  drawBoat(ctx, set, changed, 420, 360, 0.85, true);
+  drawBuoy(ctx, set, changed);
+  drawGulls(ctx, set, changed);
+  // A thin fog wash ties both panels together.
+  ctx.fillStyle = PALETTES[set.id].fog;
+  ctx.fillRect(0, 0, PANEL_W, PANEL_H);
 }

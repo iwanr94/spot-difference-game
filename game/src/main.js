@@ -1,207 +1,216 @@
-// main.js — the game itself: state, the counting clock, what a click or a key
-// does, scoring and the switch between start, play, win and time-up.
+// Harbor at Dusk — main: game loop, state, scoring and the HUD.
+// One file, one job: own the state machine and drive render + input.
 
-import { LEVELS, LAYOUT, PANEL_W, PANEL_H } from './config.js';
-import { buildPanels, render } from './render.js';
+import { SETS, SET_ORDER } from './config.js';
+import { renderFrame, setupCanvases } from './render.js';
 import { attachInput } from './input.js';
 
-const canvas = document.getElementById('stage');
-const ctx = canvas.getContext('2d');
+const $ = (id) => document.getElementById(id);
 
 const state = {
-  mode: 'start',
-  level: LEVELS[0],
-  levelIndex: 0,
-  menuIndex: 0,
-  panels: null,
+  set: SETS.dusk,
+  phase: 'start', // 'start' | 'playing' | 'won' | 'lost'
   found: new Set(),
   foundAt: {},
   hintsLeft: 3,
-  hint: null,
-  wrongs: [],
-  wrongCount: 0,
-  time: LEVELS[0].seconds,
-  totalTime: LEVELS[0].seconds,
-  cursor: { x: 300, y: 280 },
-  cursorOn: false,
-  score: 0,
-  message: null,
-  shakeAt: -999,
-  hoverSet: -1,
-  hoverHint: false,
-  mousePanel: -1,
-  reveal: false,
-  endAt: 0,
+  timeLeft: 180,
+  hintDiff: null,
+  hintAt: 0,
+  wrongLeft: null,
+  wrongRight: null,
+  lastTick: 0,
+  message: '',
 };
 
-function say(text, color, ms = 1800) {
-  state.message = { text, color, until: performance.now() + ms };
+let leftCtx;
+let rightCtx;
+
+function fmtTime(seconds) {
+  const s = Math.max(0, Math.ceil(seconds));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
-function dist2(ax, ay, bx, by) {
-  return (ax - bx) * (ax - bx) + (ay - by) * (ay - by);
+function updateHud() {
+  const total = state.set.diffs.length;
+  const found = state.found.size;
+  $('found-count').textContent = `Found ${found} / ${total}`;
+  $('remaining-count').textContent = `Remaining ${total - found}`;
+  $('timer').textContent = fmtTime(state.timeLeft);
+  $('timer').classList.toggle('urgent', state.timeLeft <= 30 && state.phase === 'playing');
+  $('timer-bar').style.width = `${(state.timeLeft / state.set.timeLimit) * 100}%`;
+  $('hints-left').textContent = `Hints left: ${state.hintsLeft}`;
+  $('hint-btn').disabled = state.hintsLeft <= 0 || state.phase !== 'playing';
+  $('message').textContent = state.message;
 }
 
-function reset(level, keepMode) {
-  state.level = level;
-  state.levelIndex = LEVELS.indexOf(level);
-  state.menuIndex = state.levelIndex;
-  state.panels = buildPanels(level);
+function showOverlay(title, text, buttonLabel) {
+  $('overlay-title').textContent = title;
+  $('overlay-text').textContent = text;
+  $('overlay-btn').textContent = buttonLabel;
+  $('overlay').classList.remove('hidden');
+}
+
+function hideOverlay() {
+  $('overlay').classList.add('hidden');
+}
+
+function startGame(setId) {
+  state.set = SETS[setId];
+  state.phase = 'playing';
   state.found = new Set();
   state.foundAt = {};
-  state.hintsLeft = level.hints;
-  state.hint = null;
-  state.wrongs = [];
-  state.wrongCount = 0;
-  state.time = level.seconds;
-  state.totalTime = level.seconds;
-  state.score = 0;
-  state.reveal = false;
-  state.cursor = { x: PANEL_W / 2, y: PANEL_H / 2 };
-  state.cursorOn = false;
-  state.message = null;
-  state.endAt = performance.now() + level.seconds * 1000;
-  if (!keepMode) state.mode = 'play';
+  state.hintsLeft = state.set.hints;
+  state.timeLeft = state.set.timeLimit;
+  state.hintDiff = null;
+  state.wrongLeft = null;
+  state.wrongRight = null;
+  state.lastTick = performance.now();
+  state.message = `Find ${state.set.diffs.length} differences in the ${state.set.name} harbor!`;
+  document.querySelectorAll('.set-btn').forEach((b) => {
+    b.classList.toggle('active', b.dataset.set === setId);
+  });
+  hideOverlay();
+  updateHud();
 }
 
-const api = {
-  state,
-
-  chooseSet(i) {
-    const lv = LEVELS[i];
-    if (!lv) return;
-    if (state.mode === 'play' || state.mode === 'win' || state.mode === 'timeup') {
-      if (lv.key === state.level.key) return;
-      reset(lv, false);
-      say(`${lv.title} \u2014 ${lv.diffs.length} changes, ${lv.seconds}s`, '#9dffd4', 2200);
-    } else {
-      state.menuIndex = i;
-      state.level = lv;
-      state.panels = state.panels || null;
-      state.totalTime = lv.seconds;
-      state.time = lv.seconds;
-      state.levelIndex = i;
-    }
-  },
-
-  start() {
-    reset(LEVELS[state.menuIndex] || LEVELS[0], false);
-    say('Find every change \u2014 click a difference in either picture', '#9dffd4', 2600);
-  },
-
-  restart() {
-    if (state.mode === 'start') { api.start(); return; }
-    reset(state.level, false);
-    say('Fresh pictures \u2014 same changes', '#9dffd4', 1600);
-  },
-
-  menu() {
-    state.mode = 'start';
-    state.reveal = false;
-    state.menuIndex = state.levelIndex;
-  },
-
-  hint() {
-    if (state.mode === 'play') {
-      if (state.hintsLeft <= 0) { say('No hints left \u2014 trust your eye', '#ff8a7a', 1600); return; }
-      const left = state.level.diffs.filter((d) => !state.found.has(d.id));
-      if (!left.length) return;
-      const pick = left[Math.floor(Math.random() * left.length)];
-      state.hintsLeft -= 1;
-      state.hint = { id: pick.id, until: performance.now() + 2300 };
-      say('A change is pulsing \u2014 look close', '#ffd166', 2000);
-      return;
-    }
-    if (state.mode === 'start') api.start();
-  },
-
-  moveCursor(dx, dy) {
-    state.cursor.x = Math.max(6, Math.min(PANEL_W - 6, state.cursor.x + dx));
-    state.cursor.y = Math.max(6, Math.min(PANEL_H - 6, state.cursor.y + dy));
-  },
-
-  markCursor() {
-    if (state.mode !== 'play') return;
-    api.mark(0, state.cursor.x, state.cursor.y);
-  },
-
-  mark(side, x, y) {
-    if (state.mode !== 'play') return;
-    let hit = null;
-    let best = Infinity;
-    for (const d of state.level.diffs) {
-      const dd = dist2(x, y, d.x, d.y);
-      if (dd <= d.r * d.r && dd < best) { best = dd; hit = d; }
-    }
-
-    if (!hit) {
-      state.wrongs.push({ side, x, y, t0: performance.now() });
-      state.wrongCount += 1;
-      state.shakeAt = performance.now();
-      say('Nothing changed there', '#ff8a7a', 1100);
-      return;
-    }
-    if (state.found.has(hit.id)) {
-      say('Already found that one', 'rgba(200,214,228,0.8)', 900);
-      return;
-    }
-
-    state.found.add(hit.id);
-    state.foundAt[hit.id] = performance.now();
-    state.hint = null;
-    const left = state.level.diffs.length - state.found.size;
-    say(left === 0 ? 'That is all of them!' : `Found it \u2014 ${left} to go`, '#9dffd4', 1400);
-
-    if (left === 0) {
-      state.time = Math.max(0, (state.endAt - performance.now()) / 1000);
-      const hintsUsed = state.level.hints - state.hintsLeft;
-      state.score = Math.max(0,
-        state.found.size * 100 +
-        Math.floor(state.time) * 5 +
-        (state.wrongCount === 0 ? 250 : 0) -
-        hintsUsed * 50);
-      state.mode = 'win';
-      state.reveal = false;
-    }
-  },
-};
-
-attachInput(canvas, api);
-
-// The clock is read from the wall time so a slow frame never buys extra seconds.
-function tick(now) {
-  if (state.mode === 'play') {
-    state.time = Math.max(0, (state.endAt - now) / 1000);
-    if (state.time <= 0) {
-      state.mode = 'timeup';
-      state.reveal = true;
-      state.hint = null;
-    }
+function endGame(won) {
+  state.phase = won ? 'won' : 'lost';
+  if (won) {
+    const score = state.found.size * 100 + Math.ceil(state.timeLeft) * 10;
+    showOverlay(
+      'Harbor Found!',
+      `You found all ${state.set.diffs.length} differences with ${fmtTime(state.timeLeft)} to spare. Score: ${score}.`,
+      'Play again',
+    );
+    state.message = `You win! Score ${score}.`;
+  } else {
+    const left = state.set.diffs.length - state.found.size;
+    showOverlay(
+      'Time is up!',
+      `The sun set on the harbor. ${left} difference${left === 1 ? '' : 's'} still hiding.`,
+      'Try again',
+    );
+    state.message = 'Time is up!';
   }
-  state.wrongs = state.wrongs.filter((w) => now - w.t0 < 700);
-  render(ctx, state, now);
-
-  // Keep the tab title honest while playing, so the hunt is readable at a glance
-  // even when the window sits behind something else.
-  const label = state.mode === 'play'
-    ? `Found ${state.found.size}/${state.level.diffs.length} · Harbor at Dusk`
-    : `Harbor at Dusk — ${state.mode === 'win' ? 'cove cleared' : state.mode === 'timeup' ? "time's up" : 'spot the difference'}`;
-  if (document.title !== label) document.title = label;
-
-  requestAnimationFrame(tick);
+  updateHud();
 }
 
-function fit() {
-  const dpr = Math.min(2, window.devicePixelRatio || 1);
-  canvas.width = LAYOUT.width * dpr;
-  canvas.height = LAYOUT.height * dpr;
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+function onGuess(panel, x, y) {
+  if (state.phase !== 'playing') return;
+  const now = performance.now();
+  const hit = state.set.diffs.find((d) => {
+    if (state.found.has(d.id)) return false;
+    const dx = x - d.x;
+    const dy = y - d.y;
+    return dx * dx + dy * dy <= d.r * d.r;
+  });
+  if (hit) {
+    state.found.add(hit.id);
+    state.foundAt[hit.id] = now;
+    state.message = `Found it — ${hit.label}!`;
+    if (state.found.size === state.set.diffs.length) {
+      updateHud();
+      endGame(true);
+      return;
+    }
+  } else {
+    // A gentle miss: a red cross where the click landed, no harsh penalty.
+    const mark = { x, y, at: now };
+    if (panel === 'left') state.wrongLeft = mark;
+    else state.wrongRight = mark;
+    state.message = 'Not quite — look closer.';
+  }
+  updateHud();
 }
 
-fit();
-window.addEventListener('resize', () => { fit(); });
-state.panels = buildPanels(state.level);
-requestAnimationFrame(tick);
+function onHint() {
+  if (state.phase !== 'playing' || state.hintsLeft <= 0) return;
+  const remaining = state.set.diffs.filter((d) => !state.found.has(d.id));
+  if (remaining.length === 0) return;
+  state.hintsLeft -= 1;
+  state.hintDiff = remaining[0];
+  state.hintAt = performance.now();
+  state.message = 'Hint: a gold ring marks one hiding spot.';
+  updateHud();
+}
 
-// Exposed for the screenshot helper: play deterministically without a mouse.
-window.harborGame = { state, api };
+// Demo presets for screenshots: ?demo=start | play | win renders a real
+// game state (start screen, mid-play with 5 found, or the win screen).
+// An optional ?set=dusk|night|storm picks the set for the preset.
+function applyDemo() {
+  const params = new URLSearchParams(location.search);
+  const setParam = params.get('set');
+  if (setParam && SETS[setParam]) state.set = SETS[setParam];
+  const demo = params.get('demo');
+  if (demo === 'play') {
+    startGame(state.set.id);
+    const now = performance.now();
+    for (const d of state.set.diffs.slice(0, 5)) {
+      state.found.add(d.id);
+      state.foundAt[d.id] = now - 400;
+    }
+    state.timeLeft = 95;
+    state.message = 'Found it — the crate moved!';
+    updateHud();
+  } else if (demo === 'win') {
+    startGame(state.set.id);
+    const now = performance.now();
+    for (const d of state.set.diffs) {
+      state.found.add(d.id);
+      state.foundAt[d.id] = now - 400;
+    }
+    state.timeLeft = 64;
+    endGame(true);
+  }
+}
+
+function loop(now) {
+  if (state.phase === 'playing') {
+    const dt = (now - state.lastTick) / 1000;
+    state.lastTick = now;
+    state.timeLeft -= dt;
+    if (state.timeLeft <= 0) {
+      state.timeLeft = 0;
+      endGame(false);
+    }
+    updateHud();
+  }
+  renderFrame(leftCtx, rightCtx, state, now);
+  requestAnimationFrame(loop);
+}
+
+function init() {
+  const leftCanvas = $('left-canvas');
+  const rightCanvas = $('right-canvas');
+  setupCanvases(leftCanvas, rightCanvas);
+  leftCtx = leftCanvas.getContext('2d');
+  rightCtx = rightCanvas.getContext('2d');
+
+  attachInput(leftCanvas, rightCanvas, {
+    onGuess,
+    onHint,
+    onStart: () => {
+      if (state.phase !== 'playing') startGame(state.set.id);
+    },
+    onRestart: () => startGame(state.set.id),
+    onSet: (id) => startGame(id),
+  });
+
+  document.querySelectorAll('.set-btn').forEach((btn) => {
+    btn.addEventListener('click', () => startGame(btn.dataset.set));
+  });
+  $('hint-btn').addEventListener('click', onHint);
+  $('overlay-btn').addEventListener('click', () => startGame(state.set.id));
+
+  showOverlay(
+    'Harbor at Dusk',
+    'Two pictures of the same lighthouse cove — but ten details differ. Click a difference on either picture to mark it. Pick a set, then hunt!',
+    'Start hunting',
+  );
+  updateHud();
+  applyDemo();
+  state.lastTick = performance.now();
+  requestAnimationFrame(loop);
+}
+
+init();
